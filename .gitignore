@@ -1,3 +1,4 @@
 data/json_2.1.0*/*
 alfred_env/
 *.pyc
+gen/ff_planner
