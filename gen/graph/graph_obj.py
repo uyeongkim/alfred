@@ -337,6 +337,8 @@ class Graph(object):
         actions, path = self.get_shortest_path(start_pose, end_pose)
         while len(actions) > 0:
             for ii, (action, pose) in enumerate(zip(actions, path)):
+                if 'forceAction' not in action:
+                    action['forceAction'] = True
                 game_state.step(action)
                 event = game_state.env.last_event
                 last_action_success = event.metadata['lastActionSuccess']
@@ -344,7 +346,7 @@ class Graph(object):
                 if not last_action_success:
                     # Can't traverse here, make sure the weight is correct.
                     if action['action'].startswith('Look') or action['action'].startswith('Rotate'):
-                        raise Exception('Look action failed %s' % event.metadata['errorMessage'])
+                       raise Exception('Look action failed %s' % event.metadata['errorMessage'])
                     self.add_impossible_spot(path[ii + 1])
                     break
             pose = game_util.get_pose(event)

@@ -2,7 +2,7 @@ import copy
 import random
 import cv2
 import numpy as np
-import gen.constants as constants
+import constants
 import gen.goal_library as glib
 
 

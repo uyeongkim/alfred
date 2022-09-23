@@ -21,8 +21,8 @@ class AgentBase(object):
     def setup_problem(self, game_state_problem_args, scene=None, objs=None):
         self.game_state.setup_problem(**game_state_problem_args, scene=scene, objs=objs)
 
-    def reset(self, game_state_reset_args, scene=None, objs=None):
-        self.game_state.reset(**game_state_reset_args, scene=scene, objs=objs)
+    def reset(self, game_state_reset_args, scene=None, objs=None, traj_data=None):
+        self.game_state.reset(**game_state_reset_args, scene=scene, objs=objs, traj_data=traj_data)
 
         self.timers = np.zeros((2, 2))
         self.current_frame_count = 0

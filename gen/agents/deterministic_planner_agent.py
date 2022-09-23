@@ -7,9 +7,10 @@ class DeterministicPlannerAgent(SemanticMapPlannerAgent):
         self.action_sequence = None
         self.question = None
 
-    def reset(self, seed=None, info=None, scene=None, objs=None):
-        info = super(DeterministicPlannerAgent, self).reset(seed, info, scene=scene, objs=objs)
+    def reset(self, seed=None, info=None, scene=None, objs=None, traj_data=None):
+        info = super(DeterministicPlannerAgent, self).reset(seed, info, scene=scene, objs=objs, traj_data=traj_data)
         self.action_sequence = ['Plan', 'End']
+        self.traj_data = traj_data
         return info
 
     def step(self, action, executing_plan=False):

@@ -3,6 +3,9 @@ import sys
 sys.path.append(os.path.join(os.environ['ALFRED_ROOT']))
 sys.path.append(os.path.join(os.environ['ALFRED_ROOT'], 'gen'))
 
+#sys.path.append('/home/uyeong/github/alfred')
+#sys.path.append('/home/uyeong/github/alfred/gen')
+
 import time
 import multiprocessing as mp
 import json
@@ -380,263 +383,145 @@ def print_successes(succ_traj):
     print("Successes: ")
     print(succ_traj)
     print("\n##################################")
+    
+def ans2x(ans):
+    return ans.lower().replace('.', '').replace(',', '').replace('\'', '').replace('-', '').replace('/', '')
+    
+import pickle
+import pprint
+# Return pddls corresponding given annotations given in a given traj_data
+def replaced_pddl(pretrained_file, traj_data):
+    with open(pretrained_file, 'rb') as f:
+        data = pickle.load(f)
+        # pp = pprint.PrettyPrinter()
+        # anns in given traj_data
+    annsList = [ans2x(r["task_desc"]) for r in traj_data["turk_annotations"]["anns"]]
+    pddls = []
+    for ans in annsList:
+        for anns, pddl in data.items():
+            if anns == ans:
+                pddls.append(pddl)
+    if len(pddls) == 0:
+        print("!!!! NO PDDLS AVAILABLE !!!!")
+        
+    for i in range(len(pddls)):
+        if pddls[i]["mrecep_target"] is None:
+            pddls[i]["mrecep_target"] = ""
+        if pddls[i]["parent_target"] is None:
+            pddls[i]["parent_target"] = ""
+        if "sliced" in pddls[i].keys():
+            pddls[i]["object_sliced"] = (pddls[i]["sliced"]==1)
+            del pddls[i]["sliced"]
+        if "object_sliced" not in pddls[i].keys():
+            print(pddls[i].keys())
+        if "toggle_target" in pddls[i].keys() \
+            and pddls[i]["toggle_target"] is None:
+            pddls[i]["toggle_target"] = ""
+    return pddls
 
 
 def main(args):
-    # settings
-    constants.DATA_SAVE_PATH = args.save_path
-    print("Force Unsave Data: %s" % str(args.force_unsave))
-
-    # Set up data structure to track dataset balance and use for selecting next parameters.
-    # In actively gathering data, we will try to maximize entropy for each (e.g., uniform spread of goals,
-    # uniform spread over patient objects, uniform recipient objects, and uniform scenes).
-    succ_traj = pd.DataFrame(columns=["goal", "pickup", "movable", "receptacle", "scene"])
-
-    # objects-to-scene and scene-to-objects database
-    for scene_type, ids in constants.SCENE_TYPE.items():
-        for id in ids:
-            obj_json_file = os.path.join('layouts', 'FloorPlan%d-objects.json' % id)
-            with open(obj_json_file, 'r') as of:
-                scene_objs = json.load(of)
-
-            id_str = str(id)
-            scene_id_to_objs[id_str] = scene_objs
-            for obj in scene_objs:
-                if obj not in obj_to_scene_ids:
-                    obj_to_scene_ids[obj] = set()
-                obj_to_scene_ids[obj].add(id_str)
-
-    # scene-goal database
-    for g in constants.GOALS:
-        for st in constants.GOALS_VALID[g]:
-            scenes_for_goal[g].extend([str(s) for s in constants.SCENE_TYPE[st]])
-        scenes_for_goal[g] = set(scenes_for_goal[g])
-
-    # scene-type database
-    for st in constants.SCENE_TYPE:
-        for s in constants.SCENE_TYPE[st]:
-            scene_to_type[str(s)] = st
-
-    # pre-populate counts in this structure using saved trajectories path.
-    succ_traj, full_traj = load_successes_from_disk(args.save_path, succ_traj, args.just_examine, args.repeats_per_cond)
-    if args.just_examine:
-        print_successes(succ_traj)
-        return
-
-    # pre-populate failed trajectories.
-    fail_traj = load_fails_from_disk(args.save_path)
-    print("Loaded %d known failed tuples" % len(fail_traj))
-
     # create env and agent
     env = ThorEnv()
 
     game_state = TaskGameStateFullKnowledge(env)
     agent = DeterministicPlannerAgent(thread_id=0, game_state=game_state)
 
-    errors = {}  # map from error strings to counts, to be shown after every failure.
-    goal_candidates = constants.GOALS[:]
-    pickup_candidates = list(set().union(*[constants.VAL_RECEPTACLE_OBJECTS[obj]  # Union objects that can be placed.
-                                           for obj in constants.VAL_RECEPTACLE_OBJECTS]))
-    pickup_candidates = [p for p in pickup_candidates if constants.OBJ_PARENTS[p] in obj_to_scene_ids]
-    movable_candidates = list(set(constants.MOVABLE_RECEPTACLES).intersection(obj_to_scene_ids.keys()))
-    receptacle_candidates = [obj for obj in constants.VAL_RECEPTACLE_OBJECTS
-                             if obj not in constants.MOVABLE_RECEPTACLES and obj in obj_to_scene_ids] + \
-                            [obj for obj in constants.VAL_ACTION_OBJECTS["Toggleable"]
-                             if obj in obj_to_scene_ids]
+    fail_traj = [
+        # valid_seen for reproduced
+        # num - 9
+        'data/json_feat_2.1.0/pick_and_place_with_movable_recep-Pen-Mug-Desk-309/trial_T20190909_023218_500741',
+        'data/json_feat_2.1.0/pick_cool_then_place_in_recep-BreadSliced-None-DiningTable-27/trial_T20190908_075813_148407',
+        'data/json_feat_2.1.0/look_at_obj_in_light-KeyChain-None-FloorLamp-213/trial_T20190908_203806_730562',
+        'data/json_feat_2.1.0/look_at_obj_in_light-Cloth-None-DeskLamp-303/trial_T20190908_170503_844252',
+        'data/json_feat_2.1.0/look_at_obj_in_light-CD-None-DeskLamp-320/trial_T20190907_224451_655673',
+        'data/json_feat_2.1.0/pick_clean_then_place_in_recep-Cloth-None-Drawer-423/trial_T20190908_140701_251653',
+        'data/json_feat_2.1.0/look_at_obj_in_light-CD-None-DeskLamp-314/trial_T20190907_114323_767231',
+        'data/json_feat_2.1.0/pick_two_obj_and_place-AlarmClock-None-Dresser-305/trial_T20190907_165826_194855', # success 한 경우도 있음
+        'data/json_feat_2.1.0/pick_two_obj_and_place-RemoteControl-None-Ottoman-203/trial_T20190906_182952_858723', # success 한 경우도 있음
+        
+        # valid_unseen
+        # num - 50
+        
 
-    # toaster isn't interesting in terms of producing linguistic diversity
-    receptacle_candidates.remove('Toaster')
-    receptacle_candidates.sort()
+    ]
+    
+    taskType = ['pick_cool_then_place_in_recep', 
+            'pick_and_place_with_movable_recep', 
+            'pick_and_place_simple', 
+            'pick_two_obj_and_place',
+            'pick_heat_then_place_in_recep',
+            'look_at_obj_in_light',
+            'pick_clean_then_place_in_recep']
 
-    scene_candidates = list(scene_id_to_objs.keys())
+    root = '../data/json_2.1.0/'
+    result = {}
+    from tqdm import tqdm
+    for split in ['valid_seen', 'valid_unseen']:
+        cnt = 0
+        for ep in tqdm(os.listdir(os.path.join(root, split)), desc=split):
+            for trial in os.listdir(os.path.join(root, split, ep)):
+                if any(trial in ft for ft in fail_traj):
+                    continue
+                
+                # Loading gt data
+                traj_root = os.path.join(root, split, ep, trial)
+                traj_data = json.load(open(traj_root+'/traj_data.json', 'r'))
+                # Getting pddls from trained data by annotations
+                # full trained
+                pddls = replaced_pddl('scripts/exp/'+split+"_e100_2.p", traj_data)
+                # pretrained
+                # pddls = replaced_pddl('scripts/'+split+"_np_pretrained.p", traj_data)
+                for pddl in pddls:
+                    traj_data["pddl_params"] = pddl    
+                    setup_data_dict()
 
-    n_until_load_successes = args.async_load_every_n_samples
-    print_successes(succ_traj)
-    task_sampler = sample_task_params(succ_traj, full_traj, fail_traj,
-                                      goal_candidates, pickup_candidates, movable_candidates,
-                                      receptacle_candidates, scene_candidates)
+                    #######################################################################################################
+                    scene = traj_data['scene']
+                    objs = traj_data['scene']['object_poses']
+                    seed = traj_data['scene']['random_seed']
+                    agent.reset(seed=seed, scene=scene, objs=objs, traj_data=traj_data)
+                    #######################################################################################################
 
-    # main generation loop
-    # keeps trying out new task tuples as trajectories either fail or suceed
-    while True:
+                    #######################################################################################################
+                    seed = traj_data['scene']['random_seed']
+                    scene = traj_data['scene']
+                    info = None
+                    try:
+                        agent.setup_problem(dict(seed=seed, info=info, traj_data=traj_data), scene=scene)
+                    except Exception as e:
+                        print('Fail:', os.path.join(ep, trial), e)
+                        cnt += 1
+                        print(split, "Result for ", cnt)
+                        continue
+                    #######################################################################################################
 
-        sampled_task = next(task_sampler)
-        print(sampled_task)  # DEBUG
-        if sampled_task is None:
-            sys.exit("No valid tuples left to sample (all are known to fail or already have %d trajectories" %
-                     args.repeats_per_cond)
-        gtype, pickup_obj, movable_obj, receptacle_obj, sampled_scene = sampled_task
-        print("sampled tuple: " + str((gtype, pickup_obj, movable_obj, receptacle_obj, sampled_scene)))
+                    #######################################################################################################
+                    print("Performing reset via thor_env API")
+                    sampled_scene = traj_data['scene']['floor_plan']
+                    env.reset(sampled_scene)
 
-        tries_remaining = args.trials_before_fail
-        # only try to get the number of trajectories left to make this tuple full.
-        target_remaining = args.repeats_per_cond - len(succ_traj.loc[(succ_traj['goal'] == gtype) &
-                                                                (succ_traj['pickup'] == pickup_obj) &
-                                                                (succ_traj['movable'] == movable_obj) &
-                                                                (succ_traj['receptacle'] == receptacle_obj) &
-                                                                (succ_traj['scene'] == str(sampled_scene))])
-        num_place_fails = 0  # count of errors related to placement failure for no valid positions.
+                    print("Performing restore via thor_env API")
+                    object_poses = traj_data['scene']['object_poses']
+                    object_toggles = traj_data['scene']['object_toggles']
+                    dirty_and_empty = traj_data['scene']['dirty_and_empty']
+                    env.restore_scene(object_poses, object_toggles, dirty_and_empty)
 
-        # continue until we're (out of tries + have never succeeded) or (have gathered the target number of instances)
-        while tries_remaining > 0 and target_remaining > 0:
-
-            # environment setup
-            constants.pddl_goal_type = gtype
-            print("PDDLGoalType: " + constants.pddl_goal_type)
-            task_id = create_dirs(gtype, pickup_obj, movable_obj, receptacle_obj, sampled_scene)
-
-            # setup data dictionary
-            setup_data_dict()
-            constants.data_dict['task_id'] = task_id
-            constants.data_dict['task_type'] = constants.pddl_goal_type
-            constants.data_dict['dataset_params']['video_frame_rate'] = constants.VIDEO_FRAME_RATE
-
-            # plan & execute
-            try:
-                # Agent reset to new scene.
-                constraint_objs = {'repeat': [(constants.OBJ_PARENTS[pickup_obj],  # Generate multiple parent objs.
-                                               np.random.randint(2 if gtype == "pick_two_obj_and_place" else 1,
-                                                                 constants.PICKUP_REPEAT_MAX + 1))],
-                                   'sparse': [(receptacle_obj.replace('Basin', ''),
-                                               num_place_fails * constants.RECEPTACLE_SPARSE_POINTS)]}
-                if movable_obj != "None":
-                    constraint_objs['repeat'].append((movable_obj,
-                                                      np.random.randint(1, constants.PICKUP_REPEAT_MAX + 1)))
-                for obj_type in scene_id_to_objs[str(sampled_scene)]:
-                    if (obj_type in pickup_candidates and
-                            obj_type != constants.OBJ_PARENTS[pickup_obj] and obj_type != movable_obj):
-                        constraint_objs['repeat'].append((obj_type,
-                                                          np.random.randint(1, constants.MAX_NUM_OF_OBJ_INSTANCES + 1)))
-                if gtype in goal_to_invalid_receptacle:
-                    constraint_objs['empty'] = [(r.replace('Basin', ''), num_place_fails * constants.RECEPTACLE_EMPTY_POINTS)
-                                                for r in goal_to_invalid_receptacle[gtype]]
-                constraint_objs['seton'] = []
-                if gtype == 'look_at_obj_in_light':
-                    constraint_objs['seton'].append((receptacle_obj, False))
-                if num_place_fails > 0:
-                    print("Failed %d placements in the past; increased free point constraints: " % num_place_fails
-                          + str(constraint_objs))
-                scene_info = {'scene_num': sampled_scene, 'random_seed': random.randint(0, 2 ** 32)}
-                info = agent.reset(scene=scene_info,
-                                   objs=constraint_objs)
-
-                # Problem initialization with given constraints.
-                task_objs = {'pickup': pickup_obj}
-                if movable_obj != "None":
-                    task_objs['mrecep'] = movable_obj
-                if gtype == "look_at_obj_in_light":
-                    task_objs['toggle'] = receptacle_obj
-                else:
-                    task_objs['receptacle'] = receptacle_obj
-                agent.setup_problem({'info': info}, scene=scene_info, objs=task_objs)
-
-                # Now that objects are in their initial places, record them.
-                object_poses = [{'objectName': obj['name'].split('(Clone)')[0],
-                                 'position': obj['position'],
-                                 'rotation': obj['rotation']}
-                                for obj in env.last_event.metadata['objects'] if obj['pickupable']]
-                dirty_and_empty = gtype == 'pick_clean_then_place_in_recep'
-                object_toggles = [{'objectType': o, 'isOn': v}
-                                  for o, v in constraint_objs['seton']]
-                constants.data_dict['scene']['object_poses'] = object_poses
-                constants.data_dict['scene']['dirty_and_empty'] = dirty_and_empty
-                constants.data_dict['scene']['object_toggles'] = object_toggles
-
-                # Pre-restore the scene to cause objects to "jitter" like they will when the episode is replayed
-                # based on stored object and toggle info. This should put objects closer to the final positions they'll
-                # be inlay at inference time (e.g., mugs fallen and broken, knives fallen over, etc.).
-                print("Performing reset via thor_env API")
-                env.reset(sampled_scene)
-                print("Performing restore via thor_env API")
-                env.restore_scene(object_poses, object_toggles, dirty_and_empty)
-                event = env.step(dict(constants.data_dict['scene']['init_action']))
-
-                terminal = False
-                while not terminal and agent.current_frame_count <= constants.MAX_EPISODE_LENGTH:
-                    action_dict = agent.get_action(None)
-                    agent.step(action_dict)
-                    reward, terminal = agent.get_reward()
-
-                dump_data_dict()
-                save_video()
-
-            except Exception as e:
-                import traceback
-                traceback.print_exc()
-                print("Error: " + repr(e))
-                print("Invalid Task: skipping...")
-                if args.debug:
-                    print(traceback.format_exc())
-
-                deleted = delete_save(args.in_parallel)
-                if not deleted:  # another thread is filling this task successfully, so leave it alone.
-                    target_remaining = 0  # stop trying to do this task.
-                else:
-                    if str(e) == "API Action Failed: No valid positions to place object found":
-                        # Try increasing the space available on sparse and empty flagged objects.
-                        num_place_fails += 1
-                        tries_remaining -= 1
-                    else:  # generic error
-                        tries_remaining -= 1
-
-                estr = str(e)
-                if len(estr) > 120:
-                    estr = estr[:120]
-                if estr not in errors:
-                    errors[estr] = 0
-                errors[estr] += 1
-                print("%%%%%%%%%%")
-                es = sum([errors[er] for er in errors])
-                print("\terrors (%d):" % es)
-                for er, v in sorted(errors.items(), key=lambda kv: kv[1], reverse=True):
-                    if v / es < 0.01:  # stop showing below 1% of errors.
-                        break
-                    print("\t(%.2f) (%d)\t%s" % (v / es, v, er))
-                print("%%%%%%%%%%")
-
-                continue
-
-            if args.force_unsave:
-                delete_save(args.in_parallel)
-
-            # add to save structure.
-            succ_traj = succ_traj.append({
-                "goal": gtype,
-                "movable": movable_obj,
-                "pickup": pickup_obj,
-                "receptacle": receptacle_obj,
-                "scene": str(sampled_scene)}, ignore_index=True)
-            target_remaining -= 1
-            tries_remaining += args.trials_before_fail  # on success, add more tries for future successes
-
-        # if this combination resulted in a certain number of failures with no successes, flag it as not possible.
-        if tries_remaining == 0 and target_remaining == args.repeats_per_cond:
-            new_fails = [(gtype, pickup_obj, movable_obj, receptacle_obj, str(sampled_scene))]
-            fail_traj = load_fails_from_disk(args.save_path, to_write=new_fails)
-            print("%%%%%%%%%%")
-            print("failures (%d)" % len(fail_traj))
-            # print("\t" + "\n\t".join([str(ft) for ft in fail_traj]))
-            print("%%%%%%%%%%")
-
-        # if this combination gave us the repeats we wanted, note it as filled.
-        if target_remaining == 0:
-            full_traj.add((gtype, pickup_obj, movable_obj, receptacle_obj, sampled_scene))
-
-        # if we're sharing with other processes, reload successes from disk to update local copy with others' additions.
-        if args.in_parallel:
-            if n_until_load_successes > 0:
-                n_until_load_successes -= 1
-            else:
-                print("Reloading trajectories from disk because of parallel processes...")
-                succ_traj = pd.DataFrame(columns=succ_traj.columns)  # Drop all rows.
-                succ_traj, full_traj = load_successes_from_disk(args.save_path, succ_traj, False, args.repeats_per_cond)
-                print("... Loaded %d trajectories" % len(succ_traj.index))
-                n_until_load_successes = args.async_load_every_n_samples
-                print_successes(succ_traj)
-                task_sampler = sample_task_params(succ_traj, full_traj, fail_traj,
-                                                  goal_candidates, pickup_candidates, movable_candidates,
-                                                  receptacle_candidates, scene_candidates)
-                print("... Created fresh instance of sample_task_params generator")
+                    env.step(traj_data['scene']['init_action'])
+                    #######################################################################################################
+                    try:
+                        terminal = False
+                        while not terminal and agent.current_frame_count <= constants.MAX_EPISODE_LENGTH:
+                            action_dict = agent.get_action(None)
+                            agent.step(action_dict)
+                            reward, terminal = agent.get_reward()
+                        dump_data_dict(os.path.join('../data/json_2.1.0_generated%s'%"trained", split, ep, trial))
+                        print('Success:', os.path.join(split, ep, trial))
+                    except Exception as e:
+                        print('Fail:', os.path.join(ep, trial), e)
+                    cnt += 1
+                    print(split, "Result for ", cnt)
+                # save_video()
 
 
 def create_dirs(gtype, pickup_obj, movable_obj, receptacle_obj, scene_num):
@@ -673,9 +558,9 @@ def setup_data_dict():
     constants.data_dict['pddl_state'] = []
 
 
-def dump_data_dict():
-    data_save_path = constants.save_path.replace(RAW_IMAGES_FOLDER, '')
-    with open(os.path.join(data_save_path, DATA_JSON_FILENAME), 'w') as fp:
+def dump_data_dict(path):
+    os.makedirs(path, exist_ok=True)
+    with open(os.path.join(path, DATA_JSON_FILENAME), 'w') as fp:
         json.dump(constants.data_dict, fp, sort_keys=True, indent=4)
 
 
@@ -715,7 +600,7 @@ if __name__ == "__main__":
     parser.add_argument("--in_parallel", action='store_true', help="this collection will run in parallel with others, so load from disk on every new sample")
     parser.add_argument("-n", "--num_threads", type=int, default=1, help="number of processes for parallel mode")
     parser.add_argument('--json_file', type=str, default="", help="path to json file with trajectory dump")
-    
+    parser.add_argument('--desk', action='store_true')
 
     # params
     parser.add_argument("--repeats_per_cond", type=int, default=3)

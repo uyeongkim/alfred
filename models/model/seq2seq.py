@@ -244,7 +244,7 @@ class Module(nn.Module):
         '''
         single string for task_id and annotation repeat idx
         '''
-        return "%s_%s" % (ex['task_id'], str(ex['repeat_idx']))
+        return "%s_%s" % (ex['task_id'], str(ex['ann']['repeat_idx']))
 
     def make_debug(self, preds, data):
         '''
@@ -266,6 +266,7 @@ class Module(nn.Module):
         load preprocessed json from disk
         '''
         json_path = os.path.join(self.args.data, task['task'], '%s' % self.args.pp_folder, 'ann_%d.json' % task['repeat_idx'])
+        # json_path = os.path.join(self.args.data, task['task'], 'traj_data.json')
         with open(json_path) as f:
             data = json.load(f)
         return data

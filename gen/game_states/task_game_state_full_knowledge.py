@@ -362,7 +362,8 @@ class TaskGameStateFullKnowledge(TaskGameState):
                 pass
 
         if constants.DEBUG:
-            print('step action', game_util.get_action_str(action))
+            # print('step action', game_util.get_action_str(action))
+            self.last_printed_action = game_util.get_action_str(action)
 
         GameStateBase.step(self, action_or_ind)
 

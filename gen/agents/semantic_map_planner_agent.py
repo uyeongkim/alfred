@@ -14,12 +14,12 @@ class SemanticMapPlannerAgent(AgentBase):
         self.plan_agent = PlanAgent(thread_id, game_state, self)
         self.planning = False
 
-    def reset(self, seed=None, info=None, scene=None, objs=None):
+    def reset(self, seed=None, info=None, scene=None, objs=None, traj_data=None):
         self.planning = False
         info = self.game_state.get_setup_info(info, scene=scene)[0]
-        super(SemanticMapPlannerAgent, self).reset({'seed': seed, 'info': info}, scene=scene, objs=objs)
+        super(SemanticMapPlannerAgent, self).reset({'seed': seed, 'info': info}, scene=scene, objs=objs, traj_data=traj_data)
         if self.plan_agent is not None:
-            self.plan_agent.reset()
+            self.plan_agent.reset(traj_data=traj_data)
         return info
 
     def setup_problem(self, game_state_problem_args, scene=None, objs=None):
@@ -67,6 +67,8 @@ class SemanticMapPlannerAgent(AgentBase):
                     self.current_frame_count += 1
                 self.total_frame_count += 1
             else:
+                if 'forceAction' not in action:
+                    action['forceAction'] = True
                 super(SemanticMapPlannerAgent, self).step(action)
 
 

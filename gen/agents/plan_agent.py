@@ -11,8 +11,9 @@ class PlanAgent(AgentBase):
         self.controller_agent = controller_agent
         self.planned = False
 
-    def reset(self):
+    def reset(self, traj_data):
         self.planned = False
+        self.traj_data = traj_data
 
     def execute_plan(self):
         step_count = 0
@@ -20,6 +21,37 @@ class PlanAgent(AgentBase):
         self.controller_agent.planning = True
         if constants.OPEN_LOOP:
             plan = self.game_state.get_current_plan(force_update=True)
+
+            if False:
+                # save high-level subgoals
+                object_target = self.traj_data['pddl_params']['object_target']
+                if self.traj_data['pddl_params']['object_sliced']:
+                    object_target += 'Sliced'
+                mrecep_target = self.traj_data['pddl_params']['mrecep_target']
+                if len(mrecep_target) == 0:
+                    mrecep_target = 'None'
+                parent_target = self.traj_data['pddl_params']['parent_target']
+                toggle_target = self.traj_data['pddl_params']['toggle_target']
+                if len(parent_target) == 0 and len(toggle_target) > 0:
+                    receptacle = toggle_target
+                elif len(parent_target) > 0 and len(toggle_target) == 0:
+                    receptacle = parent_target
+                else:
+                    assert False, print('empty parent_target & toggle_target', self.traj_data)
+                scene_num = str(self.traj_data['scene']['scene_num'])
+                ep = '-'.join([self.traj_data['task_type'],
+                               object_target,
+                               mrecep_target,
+                               receptacle,
+                               scene_num])
+                trial = self.traj_data['task_id']
+
+                import os, json
+                root = os.path.join('../data/json_2.1.0_reproduced/', ep, trial)
+                os.makedirs(root, exist_ok=True)
+                with open(os.path.join(root, 'traj_data.json'), 'w') as f:
+                    json.dump({'plan': {'high_pddl': plan}}, f, indent=4)
+                return
 
             if plan[0]['action'] == 'End':
                 raise ValueError('Empty plan is successful, no work to do')

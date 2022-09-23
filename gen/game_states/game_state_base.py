@@ -74,7 +74,7 @@ class GameStateBase(object):
         self.process_frame()
 
     def reset(self, scene_num=None, use_gt=True, seed=None, max_num_repeats=constants.MAX_NUM_OF_OBJ_INSTANCES,
-              remove_prob=None, scene=None, objs=None):
+              remove_prob=None, scene=None, objs=None, traj_data=None):
         # Reset should be called only when all information from a scene should be cleared.
         self.current_frame_count = 0
         self.timers = np.zeros((2, 2))
@@ -115,7 +115,7 @@ class GameStateBase(object):
 
         self.scene_name = 'FloorPlan%d' % self.scene_num
         self.event = self.env.reset(self.scene_name)
-        if max_num_repeats is None:
+        if False:#max_num_repeats is None:
             self.event = self.env.random_initialize(seed)
         else:
             self.env.step(dict(
@@ -130,35 +130,56 @@ class GameStateBase(object):
                 makeAgentsVisible=False,
             ))
 
-            free_per_receptacle = []
-            if objs is not None:
-                if 'sparse' in objs:
-                    for o, c in objs['sparse']:
-                        free_per_receptacle.append({'objectType': o, 'count': c})
-                if 'empty' in objs:
-                    for o, c in objs['empty']:
-                        free_per_receptacle.append({'objectType': o, 'count': c})
-            self.env.step(dict(action='InitialRandomSpawn', randomSeed=seed, forceVisible=False,
-                               numRepeats=[{'objectType': o, 'count': c}
-                                           for o, c in objs['repeat']]
-                               if objs is not None and 'repeat' in objs else None,
-                               minFreePerReceptacleType=free_per_receptacle if objs is not None else None
-                               ))
+            # free_per_receptacle = []
+            # if objs is not None:
+            #     if 'sparse' in objs:
+            #         for o, c in objs['sparse']:
+            #             free_per_receptacle.append({'objectType': o, 'count': c})
+            #     if 'empty' in objs:
+            #         for o, c in objs['empty']:
+            #             free_per_receptacle.append({'objectType': o, 'count': c})
+            # self.env.step(dict(action='InitialRandomSpawn', randomSeed=seed, forceVisible=False,
+            #                    numRepeats=[{'objectType': o, 'count': c}
+            #                                for o, c in objs['repeat']]
+            #                    if objs is not None and 'repeat' in objs else None,
+            #                    minFreePerReceptacleType=free_per_receptacle if objs is not None else None
+            #                    ))
 
-            # if 'clean' action, make everything dirty and empty out fillable things
-            if constants.pddl_goal_type == "pick_clean_then_place_in_recep":
+            ###########################################################################################################
+
+            ###########################################################################################################
+
+            # # if 'clean' action, make everything dirty and empty out fillable things
+            # if constants.pddl_goal_type == "pick_clean_then_place_in_recep":
+            #     self.env.step(dict(action='SetStateOfAllObjects',
+            #                        StateChange="CanBeDirty",
+            #                        forceAction=True))
+            #
+            #     self.env.step(dict(action='SetStateOfAllObjects',
+            #                        StateChange="CanBeFilled",
+            #                        forceAction=False))
+
+            # if objs is not None and ('seton' in objs and len(objs['seton']) > 0):
+            #     self.env.step(dict(action='SetObjectToggles',
+            #                        objectToggles=[{'objectType': o, 'isOn': v}
+            #                                       for o, v in objs['seton']]))
+
+            ###########################################################################################################
+            object_toggles = traj_data['scene']['object_toggles']
+            dirty_and_empty = traj_data['scene']['dirty_and_empty']
+            if len(object_toggles) > 0:
+                self.env.step(dict(action='SetObjectToggles', objectToggles=object_toggles))
+            if dirty_and_empty:
                 self.env.step(dict(action='SetStateOfAllObjects',
-                                   StateChange="CanBeDirty",
-                                   forceAction=True))
-
+                               StateChange="CanBeDirty",
+                               forceAction=True))
                 self.env.step(dict(action='SetStateOfAllObjects',
-                                   StateChange="CanBeFilled",
-                                   forceAction=False))
+                               StateChange="CanBeFilled",
+                               forceAction=False))
 
-            if objs is not None and ('seton' in objs and len(objs['seton']) > 0):
-                self.env.step(dict(action='SetObjectToggles',
-                                   objectToggles=[{'objectType': o, 'isOn': v}
-                                                  for o, v in objs['seton']]))
+            object_poses = traj_data['scene']['object_poses']
+            self.env.step(dict(action='SetObjectPoses', objectPoses=object_poses))
+            ###########################################################################################################
 
         self.gt_graph = graph_obj.Graph(use_gt=True, construct_graph=True, scene_id=self.scene_num)
 
@@ -172,18 +193,22 @@ class GameStateBase(object):
 
         self.agent_height = self.env.last_event.metadata['agent']['position']['y']
         self.camera_height = self.agent_height + constants.CAMERA_HEIGHT_OFFSET
-        start_point = self.local_random.randint(0, self.gt_graph.points.shape[0] - 1)
-        start_point = self.gt_graph.points[start_point, :].copy()
-        self.start_point = (start_point[0], start_point[1], self.local_random.randint(0, 3))
-
-        action = {'action': 'TeleportFull',
-                  'x': self.start_point[0] * constants.AGENT_STEP_SIZE,
-                  'y': self.agent_height,
-                  'z': self.start_point[1] * constants.AGENT_STEP_SIZE,
-                  'rotateOnTeleport': True,
-                  'horizon': 30,
-                  'rotation': self.start_point[2] * 90,
-                  }
+        # start_point = self.local_random.randint(0, self.gt_graph.points.shape[0] - 1)
+        # start_point = self.gt_graph.points[start_point, :].copy()
+        # self.start_point = (start_point[0], start_point[1], self.local_random.randint(0, 3))
+        #
+        # action = {'action': 'TeleportFull',
+        #           'x': self.start_point[0] * constants.AGENT_STEP_SIZE,
+        #           'y': self.agent_height,
+        #           'z': self.start_point[1] * constants.AGENT_STEP_SIZE,
+        #           'rotateOnTeleport': True,
+        #           'horizon': 30,
+        #           'rotation': self.start_point[2] * 90,
+        #           }
+        action = traj_data['scene']['init_action']
+        self.start_point = (int(action['x'] / constants.AGENT_STEP_SIZE),
+                            int(action['z'] / constants.AGENT_STEP_SIZE),
+                            self.local_random.randint(0, 3))
         self.event = self.env.step(action)
 
         constants.data_dict['scene']['scene_num'] = self.scene_num
@@ -193,7 +218,7 @@ class GameStateBase(object):
 
         self.pose = game_util.get_pose(self.event)
 
-        # Manually populate parentReceptacles data based on existing ReceptableObjectIds.
+        # # Manually populate parentReceptacles data based on existing ReceptableObjectIds.
         objects = self.env.last_event.metadata['objects']
         for idx in range(len(objects)):
             if objects[idx]['parentReceptacles'] is None:
@@ -404,8 +429,8 @@ class GameStateBase(object):
                                 new_action['rotation'] = start_rotation
                                 new_action['horizon'] = start_horizon
                                 self.event = self.env.step(new_action)
-                                cv2.imwrite(constants.save_path + '/%09d.png' % im_ind,
-                                            self.event.frame[:, :, ::-1])
+                                # cv2.imwrite(constants.save_path + '/%09d.png' % im_ind,
+                                #             self.event.frame[:, :, ::-1])
                                 game_util.store_image_name('%09d.png' % im_ind)  # eww... seriously need to clean this up
                                 im_ind += 1
                         if np.abs(action['horizon'] - self.env.last_event.metadata['agent']['cameraHorizon']) > 0.001:
@@ -415,8 +440,8 @@ class GameStateBase(object):
                                 new_action['horizon'] = np.round(start_horizon * (1 - xx) + end_horizon * xx, 3)
                                 new_action['rotation'] = start_rotation
                                 self.event = self.env.step(new_action)
-                                cv2.imwrite(constants.save_path + '/%09d.png' % im_ind,
-                                            self.event.frame[:, :, ::-1])
+                                # cv2.imwrite(constants.save_path + '/%09d.png' % im_ind,
+                                #             self.event.frame[:, :, ::-1])
                                 game_util.store_image_name('%09d.png' % im_ind)
                                 im_ind += 1
                         if np.abs(action['rotation'] - rotation['y']) > 0.001:
@@ -425,8 +450,8 @@ class GameStateBase(object):
                                 new_action = copy.deepcopy(action)
                                 new_action['rotation'] = np.round(start_rotation * (1 - xx) + end_rotation * xx, 3)
                                 self.event = self.env.step(new_action)
-                                cv2.imwrite(constants.save_path + '/%09d.png' % im_ind,
-                                            self.event.frame[:, :, ::-1])
+                                # cv2.imwrite(constants.save_path + '/%09d.png' % im_ind,
+                                #             self.event.frame[:, :, ::-1])
                                 game_util.store_image_name('%09d.png' % im_ind)
                                 im_ind += 1
 
@@ -438,7 +463,7 @@ class GameStateBase(object):
                         events = self.env.smooth_move_ahead(action)
                         for event in events:
                             im_ind = len(glob.glob(constants.save_path + '/*.png'))
-                            cv2.imwrite(constants.save_path + '/%09d.png' % im_ind, event.frame[:, :, ::-1])
+                            # cv2.imwrite(constants.save_path + '/%09d.png' % im_ind, event.frame[:, :, ::-1])
                             game_util.store_image_name('%09d.png' % im_ind)
 
                     elif 'Rotate' in action['action']:
@@ -447,7 +472,7 @@ class GameStateBase(object):
                         events = self.env.smooth_rotate(action)
                         for event in events:
                             im_ind = len(glob.glob(constants.save_path + '/*.png'))
-                            cv2.imwrite(constants.save_path + '/%09d.png' % im_ind, event.frame[:, :, ::-1])
+                            # cv2.imwrite(constants.save_path + '/%09d.png' % im_ind, event.frame[:, :, ::-1])
                             game_util.store_image_name('%09d.png' % im_ind)
 
                     elif 'Look' in action['action']:
@@ -456,7 +481,7 @@ class GameStateBase(object):
                         events = self.env.smooth_look(action)
                         for event in events:
                             im_ind = len(glob.glob(constants.save_path + '/*.png'))
-                            cv2.imwrite(constants.save_path + '/%09d.png' % im_ind, event.frame[:, :, ::-1])
+                            # cv2.imwrite(constants.save_path + '/%09d.png' % im_ind, event.frame[:, :, ::-1])
                             game_util.store_image_name('%09d.png' % im_ind)
 
                     elif 'OpenObject' in action['action']:
@@ -776,19 +801,19 @@ class GameStateBase(object):
                             self.check_obj_visibility(action)
                 else:
                     self.event = self.env.step(action)
-                new_pose = game_util.get_pose(self.event)
-                point_dists = np.sum(np.abs(self.gt_graph.points - np.array(new_pose)[:2]), axis=1)
-                if np.min(point_dists) > 0.0001:
-                    print('Point teleport failure')
-                    self.event = self.env.step({
-                        'action': 'Teleport',
-                        'x': start_pose[0] * constants.AGENT_STEP_SIZE,
-                        'y': self.agent_height,
-                        'z': start_pose[1] * constants.AGENT_STEP_SIZE,
-                        'rotateOnTeleport': True,
-                        'rotation': new_pose[2] * 90,
-                    })
-                    self.env.last_event.metadata['lastActionSuccess'] = False
+                # new_pose = game_util.get_pose(self.event)
+                # point_dists = np.sum(np.abs(self.gt_graph.points - np.array(new_pose)[:2]), axis=1)
+                # if np.min(point_dists) > 0.0001:
+                #     print('Point teleport failure')
+                #     self.event = self.env.step({
+                #         'action': 'Teleport',
+                #         'x': start_pose[0] * constants.AGENT_STEP_SIZE,
+                #         'y': self.agent_height,
+                #         'z': start_pose[1] * constants.AGENT_STEP_SIZE,
+                #         'rotateOnTeleport': True,
+                #         'rotation': new_pose[2] * 90,
+                #     })
+                #     self.env.last_event.metadata['lastActionSuccess'] = False
 
             self.timers[0, 0] += time.time() - t_start
             self.timers[0, 1] += 1
@@ -889,7 +914,7 @@ class GameStateBase(object):
             im_ind = -1
             for i in range(count):
                 im_ind = len(glob.glob(constants.save_path + '/*.png'))
-                cv2.imwrite(constants.save_path + '/%09d.png' % im_ind, self.env.last_event.frame[:, :, ::-1])
+                # cv2.imwrite(constants.save_path + '/%09d.png' % im_ind, self.env.last_event.frame[:, :, ::-1])
                 game_util.store_image_name('%09d.png' % im_ind)
 
                 self.env.noop()

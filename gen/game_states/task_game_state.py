@@ -26,8 +26,11 @@ class TaskGameState(PlannedGameState):
         return game_util.get_task_str(self.object_target, self.parent_target, self.toggle_target, self.mrecep_target)
 
     def get_goal_pddl(self):
-        goal_type = constants.pddl_goal_type
-        if constants.data_dict['pddl_params']['object_sliced']:
+        # goal_type = constants.pddl_goal_type
+        # if constants.data_dict['pddl_params']['object_sliced']:
+        #    goal_type += "_slice"
+        goal_type = self.traj_data['task_type']
+        if self.traj_data['pddl_params']['object_sliced']:
             goal_type += "_slice"
         goal_str = glib.gdict[goal_type]['pddl']
         goal_str = goal_str.format(obj=constants.OBJECTS[self.object_target]
@@ -194,7 +197,7 @@ class TaskGameState(PlannedGameState):
                    lambda r: is_receptacle(r)
 
 
-    def setup_problem(self, seed=None, info=None, scene=None, objs=None):
+    def setup_problem(self, seed=None, info=None, scene=None, objs=None, traj_data=None):
         '''
         setup goal with sampled objects or with the objects specified
         note: must be used with `initialize_random_scene`
@@ -202,130 +205,150 @@ class TaskGameState(PlannedGameState):
         self.terminal = False
         print('setup random goal ----------------------------------------------')
         print('seed', seed)
-        print('info', info)
+        # print('info', info)
         print('--------------------------------------------------------------------\n\n')
         super(TaskGameState, self).setup_problem(seed)
         info, max_num_repeats, remove_prob = self.get_random_task_vals(scene=scene)
         dataset_type, task_row = info
 
-        print('Type:', dataset_type, 'Row: ', task_row, 'Scene', self.scene_name, 'seed', self.scene_seed)
+        # print('Type:', dataset_type, 'Row: ', task_row, 'Scene', self.scene_name, 'seed', self.scene_seed)
         perform_sanity_check = True
 
-        # pickupable, receptacle, toggleable candidates
-        pickupable_objects = [o for o in self.env.last_event.metadata['objects']
-                              if (o['pickupable'] and o['objectType'] in constants.OBJECTS)]
-        receptacle_objects = [o for o in self.env.last_event.metadata['objects']
-                              if (o['receptacle'] and o['objectType'] in constants.RECEPTACLES
-                                  and o['objectType'] not in constants.MOVABLE_RECEPTACLES_SET)]
-        toggle_objects = [o for o in self.env.last_event.metadata['objects']
-                          if o['toggleable'] and not o['isToggled']  # must be one we can turn on.
-                          and o['objectType'] in constants.VAL_ACTION_OBJECTS["Toggleable"]]
-
-        if len(pickupable_objects) == 0:
-            print("Task Failed - %s" % constants.pddl_goal_type)
-            raise Exception("No pickupable objects in the scene")
-
-        # filter based on crit
-        obj_crit, _ = self.get_filter_crit(constants.pddl_goal_type)
-        pickupable_objects = list(filter(obj_crit, pickupable_objects))
-        if len(pickupable_objects) == 0:
-            print("Task Failed - %s" % constants.pddl_goal_type)
-            raise Exception("No pickupable objects related to the goal '%s'" % constants.pddl_goal_type)
-
-        # choose a pickupable object
-        if constants.FORCED_SAMPLING or objs is None:
-            self.rand_chosen_object = random.choice(pickupable_objects)
-        else:
-            chosen_class_available = [obj for obj in pickupable_objects
-                                      if obj['objectType'] == constants.OBJ_PARENTS[objs['pickup']]]
-            if len(chosen_class_available) == 0:
-                print("Task Failed - %s" % constants.pddl_goal_type)
-                raise Exception("Couldn't find a valid parent '%s' for pickup object with class '%s'" %
-                                 (constants.OBJ_PARENTS[objs['pickup']], objs['pickup']))
-            self.rand_chosen_object = random.choice(chosen_class_available)
-        self.rand_chosen_object_class = self.rand_chosen_object['objectType']
-        self.object_target = constants.OBJECTS.index(self.rand_chosen_object_class)
-
-        # for now, any obj differing from its parent is obtained via slicing, but that may change in the future.
-        if constants.OBJ_PARENTS[objs['pickup']] != objs['pickup']:
-            requires_slicing = True
-        else:
-            requires_slicing = False
-
-        # choose a movable receptacle
-        if "movable_recep" in constants.pddl_goal_type:
-            val_movable_receps = [o for o in self.env.last_event.metadata['objects']
-                                  if (o['objectType'] in constants.MOVABLE_RECEPTACLES_SET) and
-                                     (self.rand_chosen_object_class in constants.VAL_RECEPTACLE_OBJECTS[o['objectType']])]
-
-            if len(val_movable_receps) == 0:
-                print("Task Failed - %s" % constants.pddl_goal_type)
-                raise Exception("Couldn't find a valid moveable receptacle for the chosen object class")
-
-            if objs is not None:
-                val_movable_receps = [o for o in val_movable_receps if o['objectType'] == objs['mrecep']]
-
-            self.rand_chosen_val_moveable_recep_class = random.choice(val_movable_receps)['objectType']
-            self.mrecep_target = constants.OBJECTS.index(self.rand_chosen_val_moveable_recep_class)
-        else:
-            self.mrecep_target = None
-
-        # if slicing is required, make sure a knife is available in the scene
-        if requires_slicing:
-            knife_objs = [o for o in self.env.last_event.metadata['objects']
-                          if ("Knife" in o['objectType'])]
-            if len(knife_objs) == 0:
-                print("Task Failed - %s" % constants.pddl_goal_type)
-                raise Exception("Couldn't find knife in the scene to cut with")
-
-        if constants.pddl_goal_type == "look_at_obj_in_light":
-            # choose a toggleable object
-            self.parent_target = None
-
-            if constants.FORCED_SAMPLING or objs is None:
-                rand_chosen_toggle_object = random.choice(toggle_objects)
-            else:
-                toggle_class_available = [obj for obj in toggle_objects
-                                          if obj['objectType'] == objs['toggle']]
-                if len(toggle_class_available) == 0:
-                    print("Task Failed - %s" % constants.pddl_goal_type)
-                    raise Exception("Couldn't find a valid toggle object of class '%s'" % objs['toggle'])
-                rand_chosen_toggle_object = random.choice(toggle_class_available)
-
-            rand_chosen_toggle_class = rand_chosen_toggle_object['objectType']
-            self.toggle_target = constants.OBJECTS.index(rand_chosen_toggle_class)
-        else:
-            self.toggle_target = None
-
-            # find all valid receptacles in which rand_chosen object or rand chosen moveable receptacle can be placed
-            val_receptacle_objects_orig = [r for r in receptacle_objects if (self.rand_chosen_val_moveable_recep_class if self.mrecep_target != None else self.rand_chosen_object_class)
-                                      in constants.VAL_RECEPTACLE_OBJECTS[r['objectType']]]
-            _, recep_crit = self.get_filter_crit(constants.pddl_goal_type)
-            val_receptacle_objects = list(filter(recep_crit, val_receptacle_objects_orig))
-
-            if len(val_receptacle_objects) == 0:
-                print("Task Failed - %s" % constants.pddl_goal_type)
-                raise Exception("Couldn't find a valid receptacle object according to constraints specified")
-
-            # choose a receptacle object
-            if constants.FORCED_SAMPLING or objs is None:
-                rand_chosen_receptacle_object = random.choice(val_receptacle_objects)
-            else:
-                receptacle_class_available = [obj for obj in val_receptacle_objects
-                                              if obj['objectType'] == objs['receptacle']]
-                if len(receptacle_class_available) == 0:
-                    print("Task Failed - %s" % constants.pddl_goal_type)
-                    raise Exception("Couldn't find a valid receptacle object of class '%s'" % objs['receptacle'])
-                rand_chosen_receptacle_object = random.choice(receptacle_class_available)
-            rand_chosen_receptacle_object_class = rand_chosen_receptacle_object['objectType']
-            self.parent_target = constants.OBJECTS.index(rand_chosen_receptacle_object_class)
+        # # pickupable, receptacle, toggleable candidates
+        # pickupable_objects = [o for o in self.env.last_event.metadata['objects']
+        #                       if (o['pickupable'] and o['objectType'] in constants.OBJECTS)]
+        # receptacle_objects = [o for o in self.env.last_event.metadata['objects']
+        #                       if (o['receptacle'] and o['objectType'] in constants.RECEPTACLES
+        #                           and o['objectType'] not in constants.MOVABLE_RECEPTACLES_SET)]
+        # toggle_objects = [o for o in self.env.last_event.metadata['objects']
+        #                   if o['toggleable'] and not o['isToggled']  # must be one we can turn on.
+        #                   and o['objectType'] in constants.VAL_ACTION_OBJECTS["Toggleable"]]
+        #
+        # if len(pickupable_objects) == 0:
+        #     print("Task Failed - %s" % constants.pddl_goal_type)
+        #     raise Exception("No pickupable objects in the scene")
+        #
+        # # filter based on crit
+        # obj_crit, _ = self.get_filter_crit(constants.pddl_goal_type)
+        # pickupable_objects = list(filter(obj_crit, pickupable_objects))
+        # if len(pickupable_objects) == 0:
+        #     print("Task Failed - %s" % constants.pddl_goal_type)
+        #     raise Exception("No pickupable objects related to the goal '%s'" % constants.pddl_goal_type)
+        #
+        # # choose a pickupable object
+        # if constants.FORCED_SAMPLING or objs is None:
+        #     self.rand_chosen_object = random.choice(pickupable_objects)
+        # else:
+        #     chosen_class_available = [obj for obj in pickupable_objects
+        #                               if obj['objectType'] == constants.OBJ_PARENTS[objs['pickup']]]
+        #     if len(chosen_class_available) == 0:
+        #         print("Task Failed - %s" % constants.pddl_goal_type)
+        #         raise Exception("Couldn't find a valid parent '%s' for pickup object with class '%s'" %
+        #                          (constants.OBJ_PARENTS[objs['pickup']], objs['pickup']))
+        #     self.rand_chosen_object = random.choice(chosen_class_available)
+        # self.rand_chosen_object_class = self.rand_chosen_object['objectType']
+        # self.object_target = constants.OBJECTS.index(self.rand_chosen_object_class)
+        #
+        # # for now, any obj differing from its parent is obtained via slicing, but that may change in the future.
+        # if constants.OBJ_PARENTS[objs['pickup']] != objs['pickup']:
+        #     requires_slicing = True
+        # else:
+        #     requires_slicing = False
+        #
+        # # choose a movable receptacle
+        # if "movable_recep" in self.traj_data['task_type']: #constants.pddl_goal_type:
+        #     val_movable_receps = [o for o in self.env.last_event.metadata['objects']
+        #                           if (o['objectType'] in constants.MOVABLE_RECEPTACLES_SET) and
+        #                              (self.rand_chosen_object_class in constants.VAL_RECEPTACLE_OBJECTS[o['objectType']])]
+        #
+        #     if len(val_movable_receps) == 0:
+        #         print("Task Failed - %s" % constants.pddl_goal_type)
+        #         raise Exception("Couldn't find a valid moveable receptacle for the chosen object class")
+        #
+        #     if objs is not None:
+        #         val_movable_receps = [o for o in val_movable_receps if o['objectType'] == objs['mrecep']]
+        #
+        #     self.rand_chosen_val_moveable_recep_class = random.choice(val_movable_receps)['objectType']
+        #     self.mrecep_target = constants.OBJECTS.index(self.rand_chosen_val_moveable_recep_class)
+        # else:
+        #     self.mrecep_target = None
+        #
+        # # if slicing is required, make sure a knife is available in the scene
+        # if requires_slicing:
+        #     knife_objs = [o for o in self.env.last_event.metadata['objects']
+        #                   if ("Knife" in o['objectType'])]
+        #     if len(knife_objs) == 0:
+        #         print("Task Failed - %s" % constants.pddl_goal_type)
+        #         raise Exception("Couldn't find knife in the scene to cut with")
+        #
+        # # if constants.pddl_goal_type == "look_at_obj_in_light":
+        # if self.traj_data['task_type'] == "look_at_obj_in_light":
+        #     # choose a toggleable object
+        #     self.parent_target = None
+        #
+        #     if constants.FORCED_SAMPLING or objs is None:
+        #         rand_chosen_toggle_object = random.choice(toggle_objects)
+        #     else:
+        #         toggle_class_available = [obj for obj in toggle_objects
+        #                                   if obj['objectType'] == objs['toggle']]
+        #         if len(toggle_class_available) == 0:
+        #             print("Task Failed - %s" % constants.pddl_goal_type)
+        #             raise Exception("Couldn't find a valid toggle object of class '%s'" % objs['toggle'])
+        #         rand_chosen_toggle_object = random.choice(toggle_class_available)
+        #
+        #     rand_chosen_toggle_class = rand_chosen_toggle_object['objectType']
+        #     self.toggle_target = constants.OBJECTS.index(rand_chosen_toggle_class)
+        # else:
+        #     self.toggle_target = None
+        #
+        #     # find all valid receptacles in which rand_chosen object or rand chosen moveable receptacle can be placed
+        #     val_receptacle_objects_orig = [r for r in receptacle_objects if (self.rand_chosen_val_moveable_recep_class if self.mrecep_target != None else self.rand_chosen_object_class)
+        #                               in constants.VAL_RECEPTACLE_OBJECTS[r['objectType']]]
+        #     _, recep_crit = self.get_filter_crit(constants.pddl_goal_type)
+        #     val_receptacle_objects = list(filter(recep_crit, val_receptacle_objects_orig))
+        #
+        #     if len(val_receptacle_objects) == 0:
+        #         print("Task Failed - %s" % constants.pddl_goal_type)
+        #         raise Exception("Couldn't find a valid receptacle object according to constraints specified")
+        #
+        #     # choose a receptacle object
+        #     if constants.FORCED_SAMPLING or objs is None:
+        #         rand_chosen_receptacle_object = random.choice(val_receptacle_objects)
+        #     else:
+        #         receptacle_class_available = [obj for obj in val_receptacle_objects
+        #                                       if obj['objectType'] == objs['receptacle']]
+        #         if len(receptacle_class_available) == 0:
+        #             print("Task Failed - %s" % constants.pddl_goal_type)
+        #             raise Exception("Couldn't find a valid receptacle object of class '%s'" % objs['receptacle'])
+        #         rand_chosen_receptacle_object = random.choice(receptacle_class_available)
+        #     rand_chosen_receptacle_object_class = rand_chosen_receptacle_object['objectType']
+        #     self.parent_target = constants.OBJECTS.index(rand_chosen_receptacle_object_class)
 
         # pddl_param dict
-        constants.data_dict['pddl_params']['object_target'] = constants.OBJECTS[self.object_target] if self.object_target is not None else ""
-        constants.data_dict['pddl_params']['object_sliced'] = requires_slicing
-        constants.data_dict['pddl_params']['parent_target'] = constants.OBJECTS[self.parent_target] if self.parent_target is not None else ""
-        constants.data_dict['pddl_params']['toggle_target'] = constants.OBJECTS[self.toggle_target] if self.toggle_target is not None else ""
-        constants.data_dict['pddl_params']['mrecep_target'] = constants.OBJECTS[self.mrecep_target] if self.mrecep_target is not None else ""
+        # constants.data_dict['pddl_params']['object_target'] = constants.OBJECTS[self.object_target] if self.object_target is not None else ""
+        # constants.data_dict['pddl_params']['object_sliced'] = requires_slicing
+        # constants.data_dict['pddl_params']['parent_target'] = constants.OBJECTS[self.parent_target] if self.parent_target is not None else ""
+        # constants.data_dict['pddl_params']['toggle_target'] = constants.OBJECTS[self.toggle_target] if self.toggle_target is not None else ""
+        # constants.data_dict['pddl_params']['mrecep_target'] = constants.OBJECTS[self.mrecep_target] if self.mrecep_target is not None else ""
+
+        constants.data_dict['pddl_params']['object_sliced'] = self.traj_data['pddl_params']['object_sliced']
+
+        object_target = self.traj_data['pddl_params']['object_target']
+        self.object_target = constants.OBJECTS.index(object_target) if len(object_target) > 0 else None
+        constants.data_dict['pddl_params']['object_target'] = self.object_target
+
+        parent_target = self.traj_data['pddl_params']['parent_target']
+        self.parent_target = constants.OBJECTS.index(parent_target) if len(parent_target) > 0 else None
+        constants.data_dict['pddl_params']['parent_target'] = self.parent_target
+
+        toggle_target = self.traj_data['pddl_params']['toggle_target']
+        self.toggle_target = constants.OBJECTS.index(toggle_target) if len(toggle_target) > 0 else None
+        constants.data_dict['pddl_params']['toggle_target'] = self.toggle_target
+
+        mrecep_target = self.traj_data['pddl_params']['mrecep_target']
+        self.mrecep_target = constants.OBJECTS.index(mrecep_target) if len(mrecep_target) > 0 else None
+        constants.data_dict['pddl_params']['mrecep_target'] = self.mrecep_target
+
         self.task_target = (self.object_target, self.parent_target, self.toggle_target, self.mrecep_target)
 
         if self.parent_target is None:
@@ -341,22 +364,23 @@ class TaskGameState(PlannedGameState):
             try:
                 assert validity_check, 'Task does not seem valid according to scene metadata'
             except AssertionError:
-                raise Exception(str(('Row: ', task_row, 'Scene', self.scene_name,
+                raise Exception(str(('Scene', self.scene_name,
                                       'seed', self.scene_seed)))
 
         templated_task_desc = self.get_task_str()
-        print('problem id', self.problem_id)
-        print('Task:', templated_task_desc)
+        # print('problem id', self.problem_id)
+        # print('Task:', templated_task_desc)
         constants.data_dict['template']['task_desc'] = templated_task_desc
 
     def get_setup_info(self, info=None, scene=None):
         return self.get_random_task_vals(scene=scene)
 
-    def reset(self, seed=None, info=None, scene=None, objs=None):
-        info = super(TaskGameState, self).reset(seed, info, scene=scene, objs=objs)
+    def reset(self, seed=None, info=None, scene=None, objs=None, traj_data=None):
+        info = super(TaskGameState, self).reset(seed, info, scene=scene, objs=objs, traj_data=traj_data)
         self.receptacle_to_point = None
         self.task_target = None
         self.success = False
+        self.traj_data = traj_data
         return info
 
     def step(self, action_or_ind):

@@ -5,6 +5,8 @@ from PIL import Image
 from datetime import datetime
 from eval import Eval
 from env.thor_env import ThorEnv
+import time
+
 
 class EvalTask(Eval):
     '''
@@ -44,13 +46,29 @@ class EvalTask(Eval):
     def evaluate(cls, env, model, r_idx, resnet, traj_data, args, lock, successes, failures, results):
         # reset model
         model.reset()
-
+        
+        file = open(os.path.join(os.environ["ALFRED_ROOT"], "data", args.eval_dir, args.eval_split, "input.txt"), "r")
+        run_traj = [line.replace("\n", "").replace(".", "data/json_feat_2.1.0") for line in file.readlines()]
+        # with open(os.path.join(os.environ["ALFRED_ROOT"], "valid_unseen-failures.txt"), 'r') as f:
+        #     run_traj = f.readlines()
+        # run_traj = [line.replace("\n", "").replace("\'", "").replace(",", "") for line in run_traj]      
+        if traj_data['root'] not in run_traj:
+            return
+        # with open(os.path.join(os.environ["ALFRED_ROOT"], "found_valid_seen-recep:0.3.txt"), 'r') as f:
+        #     evaluated = f.readlines()
+        # evaluated = [line.replace("\n", "") for line in evaluated]  
+        # if traj_data['root'] in evaluated:
+        #     return
+        
         # setup scene
         reward_type = 'dense'
         cls.setup_scene(env, traj_data, r_idx, args, reward_type=reward_type)
 
         # extract language features
-        feat = model.featurize([traj_data], load_mask=False)
+        #feat = model.featurize([traj_data], load_mask=False)
+        
+        traj_data_pddl = json.load(open(traj_data['root'].replace('json_feat_2.1.0', args.eval_dir+"/"+traj_data['split']) + '/traj_data.json', 'r'))
+        gt_actions = traj_data_pddl['plan']['low_actions']
 
         # goal instr
         goal_instr = traj_data['turk_annotations']['anns'][r_idx]['task_desc']
@@ -61,27 +79,41 @@ class EvalTask(Eval):
         reward = 0
         while not done:
             # break if max_steps reached
-            if t >= args.max_steps:
+            if t >= args.max_steps or t >= len(gt_actions):
+                # print("Fail: max step exceeded")
+                with open(os.path.join(os.environ["ALFRED_ROOT"], "found_{}-recep:avg.txt".format(args.eval_split)), 'a') as f:
+                    f.write(traj_data['root']+"\n")
                 break
-
             # extract visual features
-            curr_image = Image.fromarray(np.uint8(env.last_event.frame))
-            feat['frames'] = resnet.featurize([curr_image], batch=1).unsqueeze(0)
+            #curr_image = Image.fromarray(np.uint8(env.last_event.frame))
+            #feat['frames'] = resnet.featurize([curr_image], batch=1).unsqueeze(0)
 
             # forward model
-            m_out = model.step(feat)
-            m_pred = model.extract_preds(m_out, [traj_data], feat, clean_special_tokens=False)
-            m_pred = list(m_pred.values())[0]
+            #m_out = model.step(feat)
+            #m_pred = model.extract_preds(m_out, [traj_data], feat, clean_special_tokens=False)
+            #m_pred = list(m_pred.values())[0]
 
             # check if <<stop>> was predicted
-            if m_pred['action_low'] == cls.STOP_TOKEN:
-                print("\tpredicted STOP")
-                break
+            #if m_pred['action_low'] == cls.STOP_TOKEN:
+            #    print("\tpredicted STOP")
+            #    break
 
             # get action and mask
-            action, mask = m_pred['action_low'], m_pred['action_low_mask'][0]
-            mask = np.squeeze(mask, axis=0) if model.has_interaction(action) else None
-
+            #action, mask = m_pred['action_low'], m_pred['action_low_mask'][0]
+            #mask = np.squeeze(mask, axis=0) if model.has_interaction(action) else None
+            action = gt_actions[t]['discrete_action']['action']
+            mask = None
+            if model.has_interaction(action):
+                from gen.utils.image_util import decompress_mask
+                mask = decompress_mask(gt_actions[t]['discrete_action']['args']['mask'])
+                #mask = decompress_mask([gt_actions[t]['discrete_action']['args']['point']])
+                #mask = env.last_event.instance_masks[gt_actions[t]['api_action']['objectId']]
+                import matplotlib.pyplot as plt
+                rgb = np.array(env.last_event.frame, dtype=np.float32) / 255
+                # if not os.path.exists('../tmp'):
+                #     os.makedirs('../tmp')
+                # plt.imsave('../tmp/{:05d}.png'.format(t), rgb/2 + mask[:,:,np.newaxis]/2)
+            
             # print action
             if args.debug:
                 print(action)
@@ -90,9 +122,18 @@ class EvalTask(Eval):
             t_success, _, _, err, _ = env.va_interact(action, interact_mask=mask, smooth_nav=args.smooth_nav, debug=args.debug)
             if not t_success:
                 fails += 1
+                with open(os.path.join(os.environ["ALFRED_ROOT"], "found_{}-recep:avg.txt".format(args.eval_split)), 'a') as f:
+                    f.write(traj_data['root']+"\n")
+                # print("Interact API failed %d times" % fails + "; latest error '%s'" % err)
                 if fails >= args.max_fails:
-                    print("Interact API failed %d times" % fails + "; latest error '%s'" % err)
+                    # print("Interact API failed %d times" % fails + "; latest error '%s'" % err)
                     break
+            
+            #if t > 30:
+            #    print(t)
+            #    for o in env.last_event.metadata['objects']:
+            #        if 'Apple' in o['name']:
+            #            print('  -', o['name'], o['
 
             # next time-step
             t_reward, t_done = env.get_transition_reward()

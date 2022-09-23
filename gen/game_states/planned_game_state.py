@@ -66,7 +66,8 @@ class PlannedGameState(GameStateBase, ABC):
             objects = copy.deepcopy(constants.OBJECTS_SET) - receptacle_types
             object_str = '\n        '.join([obj + ' # object' for obj in objects])
 
-            self.knife_obj = {'ButterKnife', 'Knife'} if constants.data_dict['pddl_params']['object_sliced'] else {}
+            # self.knife_obj = {'ButterKnife', 'Knife'} if constants.data_dict['pddl_params']['object_sliced'] else {}
+            self.knife_obj = {'ButterKnife', 'Knife'} if self.traj_data['pddl_params']['object_sliced'] else {}
 
             otype_str = '\n        '.join([obj + 'Type # otype' for obj in objects])
             rtype_str = '\n        '.join([obj + 'Type # rtype' for obj in receptacle_types])
@@ -428,7 +429,7 @@ class PlannedGameState(GameStateBase, ABC):
     def get_setup_info(self, info=None):
         raise NotImplementedError
 
-    def reset(self, seed=None, info=None, scene=None, objs=None):
+    def reset(self, seed=None, info=None, scene=None, objs=None, traj_data=None):
         if self.problem_id is not None:
             # clean up old problem
             if (not constants.EVAL and not constants.DEBUG and
@@ -454,6 +455,7 @@ class PlannedGameState(GameStateBase, ABC):
         self.plan = None
         self.failed_plan_action = False
         self.placed_items = set()
+        self.traj_data = traj_data
 
         if seed is not None:
             print('set seed in planned_game_state', seed)
@@ -464,7 +466,7 @@ class PlannedGameState(GameStateBase, ABC):
 
         info, max_num_repeats, remove_prob = self.get_setup_info(info)
         super(PlannedGameState, self).reset(self.scene_num, False, self.scene_seed, max_num_repeats, remove_prob,
-                                            scene=scene, objs=objs)
+                                            scene=scene, objs=objs, traj_data=traj_data)
         self.gt_graph.clear()
 
         points_source = 'layouts/%s-openable.json' % self.scene_name
