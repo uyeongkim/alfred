@@ -10,4 +10,4 @@ Pillow
 torch==1.6.0
 torchvision==0.7.0
 tensorboardX==1.8
-ai2thor==2.1.0
+ai2thor == 4.2.0

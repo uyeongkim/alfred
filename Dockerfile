@@ -1,4 +1,4 @@
-FROM nvidia/cuda:9.0-cudnn7-devel-ubuntu16.04
+FROM nvidia/cuda:11.7.1-devel-ubuntu20.04
 
 ARG USER_NAME
 ARG USER_PASSWORD
@@ -29,7 +29,7 @@ RUN python3 -m virtualenv --python=/usr/bin/python3 $VIRTUAL_ENV
 ENV PATH="$VIRTUAL_ENV/bin:$PATH"
 
 # install python requirements
-RUN pip install --upgrade pip==19.3.1
+RUN pip install --upgrade pip
 RUN pip install -U setuptools
 COPY ./requirements.txt /tmp/requirements.txt
 RUN pip install -r /tmp/requirements.txt
